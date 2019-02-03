@@ -25,6 +25,8 @@
 #define SOFT_AES true
 #endif
 
+#include "cn_gpu/cn_slow_hash.hpp"
+
 static struct cryptonight_ctx* ctx = NULL;
 
 void init_ctx() {
@@ -197,6 +199,21 @@ NAN_METHOD(cryptonight_pico) {
                 cryptonight_single_hash    <xmrig::CRYPTONIGHT_PICO, SOFT_AES, xmrig::VARIANT_TRTL>             (reinterpret_cast<const uint8_t*>(Buffer::Data(target)), Buffer::Length(target), reinterpret_cast<uint8_t*>(output), &ctx);
 #endif
     }
+
+    v8::Local<v8::Value> returnValue = Nan::CopyBuffer(output, 32).ToLocalChecked();
+    info.GetReturnValue().Set(returnValue);
+}
+
+NAN_METHOD(cryptonight_gpu) {
+    if (info.Length() < 1) return THROW_ERROR_EXCEPTION("You must provide one argument.");
+
+    Local<Object> target = info[0]->ToObject();
+    if (!Buffer::HasInstance(target)) return THROW_ERROR_EXCEPTION("Argument 1 should be a buffer object.");
+
+    char output[32];
+    static thread_local cn_pow_hash_v3 gpu_ctx;
+
+    gpu_ctx.hash(Buffer::Data(target), Buffer::Length(target), output);
 
     v8::Local<v8::Value> returnValue = Nan::CopyBuffer(output, 32).ToLocalChecked();
     info.GetReturnValue().Set(returnValue);
@@ -513,6 +530,45 @@ NAN_METHOD(cryptonight_pico_async) {
     Nan::AsyncQueueWorker(new CCryptonightPicoAsync(callback, Buffer::Data(target), Buffer::Length(target), variant));
 }
 
+class CCryptonightGpu : public Nan::AsyncWorker {
+
+    private:
+        const char* const m_input;
+        const uint32_t m_input_len;
+        char m_output[32];
+        cn_pow_hash_v3 gpu_ctx;
+
+    public:
+
+        CCryptonightGpu(Nan::Callback* const callback, const char* const input, const uint32_t input_len)
+            : Nan::AsyncWorker(callback), m_input(input), m_input_len(input_len) {
+        }
+
+
+        void Execute () {
+            gpu_ctx.hash(m_input, m_input_len, m_output);
+        }
+
+        void HandleOKCallback () {
+            Nan::HandleScope scope;
+
+            v8::Local<v8::Value> argv[] = {
+                Nan::Null(),
+                v8::Local<v8::Value>(Nan::CopyBuffer(m_output, 32).ToLocalChecked())
+            };
+            callback->Call(2, argv, async_resource);
+        }
+};
+
+NAN_METHOD(cryptonight_gpu_async) {
+    if (info.Length() < 2) return THROW_ERROR_EXCEPTION("You must provide at least two arguments.");
+
+    Local<Object> target = info[0]->ToObject();
+    if (!Buffer::HasInstance(target)) return THROW_ERROR_EXCEPTION("Argument should be a buffer object.");
+
+    Callback *callback = new Nan::Callback(info[1].As<v8::Function>());
+    Nan::AsyncQueueWorker(new CCryptonightGpu(callback, Buffer::Data(target), Buffer::Length(target)));
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -525,6 +581,8 @@ NAN_MODULE_INIT(init) {
     Nan::Set(target, Nan::New("cryptonight_heavy_async").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_heavy_async)).ToLocalChecked());
     Nan::Set(target, Nan::New("cryptonight_pico").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_pico)).ToLocalChecked());
     Nan::Set(target, Nan::New("cryptonight_pico_async").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_pico_async)).ToLocalChecked());
+    Nan::Set(target, Nan::New("cryptonight_gpu").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_gpu)).ToLocalChecked());
+    Nan::Set(target, Nan::New("cryptonight_gpu_async").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_gpu_async)).ToLocalChecked());
 }
 
 NODE_MODULE(cryptonight, init)

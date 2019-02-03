@@ -7,11 +7,13 @@
                 "multihashing.cc",
                 "xmrig/extra.cpp",
                 "xmrig/Mem_unix.cpp",
-                "xmrig/crypto/c_blake256.c",
-                "xmrig/crypto/c_groestl.c",
-                "xmrig/crypto/c_jh.c",
-                "xmrig/crypto/c_skein.c",
-                "xmrig/common/crypto/keccak.cpp"
+                "xmrig/common/crypto/keccak.cpp",
+                "cn_gpu/cn_slow_hash_soft.cpp",
+                "cn_gpu/cn_slow_hash_hard_intel.cpp",
+                "cn_gpu/cn_slow_hash_hard_arm.cpp",
+                "cn_gpu/cn_slow_hash_intel_avx2.cpp",
+                "aux_hash/aux_hash.c",
+                "cn_gpu/keccak.c"
             ],
             "include_dirs": [
                 "xmrig",

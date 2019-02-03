@@ -44,30 +44,27 @@
 
 extern "C"
 {
-#include "crypto/c_groestl.h"
-#include "crypto/c_blake256.h"
-#include "crypto/c_jh.h"
-#include "crypto/c_skein.h"
+#include "../../aux_hash/aux_hash.h"
 }
 
 
 static inline void do_blake_hash(const uint8_t *input, size_t len, uint8_t *output) {
-    blake256_hash(output, input, len);
+    blake256_hash(input, output);
 }
 
 
 static inline void do_groestl_hash(const uint8_t *input, size_t len, uint8_t *output) {
-    groestl(input, len * 8, output);
+    groestl_hash(input, output);
 }
 
 
 static inline void do_jh_hash(const uint8_t *input, size_t len, uint8_t *output) {
-    jh_hash(32 * 8, input, 8 * len, output);
+    jh_hash(input, output);
 }
 
 
 static inline void do_skein_hash(const uint8_t *input, size_t len, uint8_t *output) {
-    xmr_skein(input, output);
+    skein_hash(input, output);
 }
 
 
