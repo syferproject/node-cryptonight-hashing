@@ -97,7 +97,9 @@ void init_rx(const uint8_t* seed_hash_data, xmrig::Algorithm::Id algo) {
     assert(rxid < MAXRX);
 
     randomx_set_scratchpad_prefetch_mode(0);
+#if !defined(__ARM_ARCH)
     randomx_set_huge_pages_jit(false);
+#endif
     //randomx_set_optimized_dataset_init(0);
 
     if (!rx_cache[rxid]) {
