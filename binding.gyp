@@ -55,6 +55,8 @@
                 "xmrig/crypto/randomx/blake2/blake2b.c",
                 '<!@(uname -a | grep "x86_64" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_x86_static.S" || echo)',
                 '<!@(uname -a | grep "x86_64" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_x86.cpp" || echo)',
+                '<!@(uname -a | grep "aarch64" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_a64_static.S" || echo)',
+                '<!@(uname -a | grep "aarch64" >/dev/null && echo "xmrig/crypto/randomx/jit_compiler_a64.cpp" || echo)',
 
                 "xmrig/3rdparty/argon2/lib/argon2.c",
                 "xmrig/3rdparty/argon2/lib/core.c",
