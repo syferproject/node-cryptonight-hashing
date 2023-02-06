@@ -62,6 +62,9 @@ extern "C" {
   #define FNA(algo) xmrig::CnHash::fn(xmrig::Algorithm::algo, SOFT_AES ? xmrig::CnHash::AV_SINGLE_SOFT : xmrig::CnHash::AV_SINGLE, xmrig::Assembly::NONE)
 #endif
 
+#include "cn_gpu/cn_slow_hash.hpp"
+
+static struct cryptonight_ctx* ctx = NULL;
 
 const size_t max_mem_size = 20 * 1024 * 1024;
 xmrig::VirtualMemory mem(max_mem_size, true, false, 0, 4096);
@@ -408,8 +411,22 @@ NAN_METHOD(argon2) {
     info.GetReturnValue().Set(returnValue);
 }
 
-NAN_METHOD(astrobwt) {
+NAN_METHOD(cryptonight_gpu) {
     if (info.Length() < 1) return THROW_ERROR_EXCEPTION("You must provide one argument.");
+
+    Local<Object> target = info[0]->ToObject();
+    if (!Buffer::HasInstance(target)) return THROW_ERROR_EXCEPTION("Argument 1 should be a buffer object.");
+
+    char output[32];
+    static thread_local cn_pow_hash_v3 gpu_ctx;
+
+    gpu_ctx.hash(Buffer::Data(target), Buffer::Length(target), output);
+
+    v8::Local<v8::Value> returnValue = Nan::CopyBuffer(output, 32).ToLocalChecked();
+    info.GetReturnValue().Set(returnValue);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     v8::Isolate *isolate = v8::Isolate::GetCurrent();
     Local<Object> target = info[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
@@ -749,10 +766,44 @@ NAN_METHOD(etchash) {
         }
         ethash_return_value_t res = ethash_light_compute(cache, header_hash, nonce);
 
-        v8::Local<v8::Array> returnValue = New<v8::Array>(2);
-        Nan::Set(returnValue, 0, Nan::CopyBuffer((char*)&res.result.b[0], 32).ToLocalChecked());
-        Nan::Set(returnValue, 1, Nan::CopyBuffer((char*)&res.mix_hash.b[0], 32).ToLocalChecked());
-	info.GetReturnValue().Set(returnValue);
+class CCryptonightGpu : public Nan::AsyncWorker {
+
+    private:
+        const char* const m_input;
+        const uint32_t m_input_len;
+        char m_output[32];
+        cn_pow_hash_v3 gpu_ctx;
+
+    public:
+
+        CCryptonightGpu(Nan::Callback* const callback, const char* const input, const uint32_t input_len)
+            : Nan::AsyncWorker(callback), m_input(input), m_input_len(input_len) {
+        }
+
+
+        void Execute () {
+            gpu_ctx.hash(m_input, m_input_len, m_output);
+        }
+
+        void HandleOKCallback () {
+            Nan::HandleScope scope;
+
+            v8::Local<v8::Value> argv[] = {
+                Nan::Null(),
+                v8::Local<v8::Value>(Nan::CopyBuffer(m_output, 32).ToLocalChecked())
+            };
+            callback->Call(2, argv, async_resource);
+        }
+};
+
+NAN_METHOD(cryptonight_gpu_async) {
+    if (info.Length() < 2) return THROW_ERROR_EXCEPTION("You must provide at least two arguments.");
+
+    Local<Object> target = info[0]->ToObject();
+    if (!Buffer::HasInstance(target)) return THROW_ERROR_EXCEPTION("Argument should be a buffer object.");
+
+    Callback *callback = new Nan::Callback(info[1].As<v8::Function>());
+    Nan::AsyncQueueWorker(new CCryptonightGpu(callback, Buffer::Data(target), Buffer::Length(target)));
 }
 
 
@@ -761,20 +812,9 @@ NAN_MODULE_INIT(init) {
     Nan::Set(target, Nan::New("cryptonight_light").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_light)).ToLocalChecked());
     Nan::Set(target, Nan::New("cryptonight_heavy").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_heavy)).ToLocalChecked());
     Nan::Set(target, Nan::New("cryptonight_pico").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_pico)).ToLocalChecked());
-    Nan::Set(target, Nan::New("randomx").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(randomx)).ToLocalChecked());
-    Nan::Set(target, Nan::New("argon2").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(argon2)).ToLocalChecked());
-    Nan::Set(target, Nan::New("astrobwt").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(astrobwt)).ToLocalChecked());
-    Nan::Set(target, Nan::New("k12").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(k12)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29s").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29s)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29v").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29v)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29b").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29i").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29b_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("c29i_cycle_hash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i_cycle_hash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("kawpow").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(kawpow)).ToLocalChecked());
-    Nan::Set(target, Nan::New("ethash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(ethash)).ToLocalChecked());
-    Nan::Set(target, Nan::New("etchash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(etchash)).ToLocalChecked());
+    Nan::Set(target, Nan::New("cryptonight_pico_async").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_pico_async)).ToLocalChecked());
+    Nan::Set(target, Nan::New("cryptonight_gpu").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_gpu)).ToLocalChecked());
+    Nan::Set(target, Nan::New("cryptonight_gpu_async").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(cryptonight_gpu_async)).ToLocalChecked());
 }
 
 NODE_MODULE(cryptonight, init)
